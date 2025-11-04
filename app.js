@@ -64,6 +64,7 @@ let guidingEnabled = false; // show guidance arrow only on demand
 
 // Rendering parameters
 const metersPerPixel = 0.02; // 1 pixel = 2 cm; scale factor for drawing
+let viewOffsetPx = { x: 0, y: 0 }; // pan offset in pixels
 
 function metersToCanvas(m) {
   return m / metersPerPixel;
@@ -147,8 +148,8 @@ function toCanvasPoint(p) {
   const cx = rect.width / 2;
   const cy = rect.height / 2;
   return {
-    x: cx + metersToCanvas(p.x),
-    y: cy + metersToCanvas(p.y),
+    x: cx + metersToCanvas(p.x) + viewOffsetPx.x,
+    y: cy + metersToCanvas(p.y) + viewOffsetPx.y,
   };
 }
 
@@ -271,6 +272,7 @@ function onOrientation(e) {
     headingLPF = headingLPF + alpha * diff;
     lastHeadingDeg = ((headingLPF % 360) + 360) % 360;
     elements.heading.textContent = lastHeadingDeg.toFixed(0);
+    if (originSet) redrawAll();
   }
 
   // Device pitch (front-back tilt). On most devices, e.beta ~ [-180,180]. Use as incline proxy.
@@ -287,30 +289,40 @@ function magnitude(x, y, z) {
 }
 
 function onMotion(e) {
-  if (!originSet) return;
   const a = e.accelerationIncludingGravity || e.acceleration;
   if (!a) return;
   const m = magnitude(a.x || 0, a.y || 0, a.z || 0);
   accelBuffer.push({ t: Date.now(), m });
   if (accelBuffer.length > accelBufferSize) accelBuffer.shift();
 
-  detectStepAndAdvance();
+  // Detect steps always; advance only when origin is set
+  const stepDetected = detectStep();
+  if (stepDetected) {
+    stepCount += 1;
+    const stepMeters = clamp(parseFloat(elements.stepLength.value || '0.75'), 0.3, 1.5);
+    if (originSet) {
+      advanceByStep(stepMeters);
+    } else if (calibActive) {
+      const liveSteps = Math.max(0, stepCount - stepCountAtCalibStart);
+      elements.calibSteps.textContent = String(liveSteps);
+    }
+  }
   if (calibActive) {
     const liveSteps = Math.max(0, stepCount - stepCountAtCalibStart);
     elements.calibSteps.textContent = String(liveSteps);
   }
 }
 
-function detectStepAndAdvance() {
+function detectStep() {
   // Simple peak detection relative to rolling mean
-  if (accelBuffer.length < 12) return;
+  if (accelBuffer.length < 12) return false;
   const now = Date.now();
   const recent = accelBuffer.slice(-20);
   const mean = recent.reduce((s, v) => s + v.m, 0) / recent.length;
   const variance = recent.reduce((s, v) => s + (v.m - mean) * (v.m - mean), 0) / recent.length;
   const std = Math.sqrt(variance);
   const last = recent[recent.length - 1];
-  if (std < 0.6) return; // reject jitter when not walking
+  if (std < 0.6) return false; // reject jitter when not walking
   const threshold = mean + Math.max(0.7, 1.0 * std);
 
   const minMsBetweenSteps = 400;
@@ -318,11 +330,11 @@ function detectStepAndAdvance() {
   lastAbove = last.m > threshold;
   if (risingEdge && now - lastStepTime > minMsBetweenSteps) {
     lastStepTime = now;
-    stepCount += 1;
-    const stepMeters = clamp(parseFloat(elements.stepLength.value || '0.75'), 0.3, 1.5);
-    advanceByStep(stepMeters);
+    lastMagnitude = last.m;
+    return true;
   }
   lastMagnitude = last.m;
+  return false;
 }
 
 function advanceByStep(stepMeters) {
@@ -435,6 +447,30 @@ if ('serviceWorker' in navigator) {
 // Initial draw
 resizeCanvas();
 
+// ---- Canvas panning (drag to move view) ----
+let isDragging = false;
+let lastDrag = { x: 0, y: 0 };
+elements.canvas.addEventListener('pointerdown', (e) => {
+  isDragging = true;
+  lastDrag = { x: e.clientX, y: e.clientY };
+  try { elements.canvas.setPointerCapture(e.pointerId); } catch(_) {}
+});
+elements.canvas.addEventListener('pointermove', (e) => {
+  if (!isDragging) return;
+  const dx = e.clientX - lastDrag.x;
+  const dy = e.clientY - lastDrag.y;
+  lastDrag = { x: e.clientX, y: e.clientY };
+  viewOffsetPx.x += dx;
+  viewOffsetPx.y += dy;
+  e.preventDefault();
+  redrawAll();
+}, { passive: false });
+elements.canvas.addEventListener('pointerup', (e) => {
+  isDragging = false;
+  try { elements.canvas.releasePointerCapture(e.pointerId); } catch(_) {}
+});
+elements.canvas.addEventListener('pointercancel', () => { isDragging = false; });
+
 // ---- Calibration ----
 let calibActive = false;
 let calibStepCount = 0;
@@ -512,12 +548,16 @@ function toggleFullscreen() {
     document.body.appendChild(overlayDiv);
     overlayDiv.appendChild(elements.canvas);
     fullscreen = true;
+    document.body.classList.add('is-fullscreen');
+    document.documentElement.style.overflow = 'hidden';
   } else {
     if (overlayDiv) {
       originalCanvasParent.appendChild(elements.canvas);
       document.body.removeChild(overlayDiv);
     }
     fullscreen = false;
+    document.body.classList.remove('is-fullscreen');
+    document.documentElement.style.overflow = '';
   }
   resizeCanvas();
 }

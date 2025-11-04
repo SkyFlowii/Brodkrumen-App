@@ -99,6 +99,11 @@ canvas { width: 100%; height: 60vh; display: block; touch-action: pan-y; }
 }
 .fullscreen-overlay canvas { height: 100vh; }
 
+.is-fullscreen .app-header,
+.is-fullscreen .controls { display: none; }
+.is-fullscreen body { overflow: hidden; }
+.is-fullscreen .layout { padding: 0; }
+
 .modal.hidden { display: none; }
 .modal {
   position: fixed;
@@ -106,6 +111,7 @@ canvas { width: 100%; height: 60vh; display: block; touch-action: pan-y; }
   display: grid;
   place-items: center;
   background: rgba(0,0,0,0.5);
+  z-index: 2000;
 }
 .modal-card {
   width: min(520px, 92vw);
