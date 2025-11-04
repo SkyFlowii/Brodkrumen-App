@@ -8,6 +8,7 @@ const elements = {
   btnReset: document.getElementById('btn-reset'),
   btnCalibrate: document.getElementById('btn-calibrate'),
   btnGuide: document.getElementById('btn-guide'),
+  btnPause: document.getElementById('btn-pause'),
   stepLength: document.getElementById('stepLength'),
   distance: document.getElementById('distance'),
   heading: document.getElementById('heading'),
@@ -60,6 +61,7 @@ let headingLPF = null; // low-pass filtered heading
 let pitchLPF = 0; // radians, device pitch (vor/zurück)
 let altitudeMeters = 0; // relative
 let guidingEnabled = false; // show guidance arrow only on demand
+let paused = false;
 
 // Hoisted globals to avoid ReferenceError before initialization
 let fullscreen = false;
@@ -84,6 +86,7 @@ function metersToCanvas(m) {
 function redrawAll() {
   const rect = elements.canvas.getBoundingClientRect();
   ctx.clearRect(0, 0, rect.width, rect.height);
+  if (!fullscreen) { viewOffsetPx.x = 0; viewOffsetPx.y = 0; }
 
   // Draw grid
   drawGrid(rect.width, rect.height);
@@ -108,10 +111,14 @@ function redrawAll() {
     ctx.arc(head.x, head.y, 5, 0, Math.PI * 2);
     ctx.fill();
 
-    // Heading arrow at current position
-    if (lastHeadingDeg != null) {
-      drawArrow(head.x, head.y, headingToCanvasAngleRad(lastHeadingDeg), 28, '#f59e0b');
+    // Heading arrow
+    let arrowAngleRad = null;
+    if (lastMoveHeadingDeg != null && Date.now() - lastStepTime < 3000) {
+      arrowAngleRad = headingToCanvasAngleRad(lastMoveHeadingDeg);
+    } else if (lastHeadingDeg != null) {
+      arrowAngleRad = headingToCanvasAngleRad(lastHeadingDeg);
     }
+    if (arrowAngleRad != null) drawArrow(head.x, head.y, arrowAngleRad, 28, '#f59e0b');
 
     // Return-to-start arrow from current position (only when guiding)
     if (originSet && guidingEnabled) {
@@ -216,6 +223,7 @@ const accelBufferSize = 64;
 let lastStepTime = 0;
 let lastAbove = false;
 let lastMagnitude = 0;
+let lastMoveHeadingDeg = null;
 
 function setStatus(text) {
   elements.status.textContent = text;
@@ -358,12 +366,17 @@ function advanceByStep(stepMeters) {
   const dy = -Math.cos(rad) * stepMeters; // north-south component (negative for north)
   const next = { x: currentPosition.x + dx, y: currentPosition.y + dy };
 
-  // Update path: add segment each step, and also ensure line draws after ~2m as requested
-  pathPoints.push({ x: currentPosition.x, y: currentPosition.y });
-  pathPoints.push({ x: next.x, y: next.y });
+  // Update movement heading
+  lastMoveHeadingDeg = ((Math.atan2(dx, -dy) * 180 / Math.PI) + 360) % 360;
+
+  // Update path only if not paused
+  if (!paused) {
+    pathPoints.push({ x: currentPosition.x, y: currentPosition.y });
+    pathPoints.push({ x: next.x, y: next.y });
+    totalDistance += stepMeters;
+  }
 
   currentPosition = next;
-  totalDistance += stepMeters;
 
   // Vertical estimate from pitch per step (dz = step * sin(pitch))
   const pitch = pitchLPF || 0;
@@ -409,6 +422,8 @@ function setStartPoint() {
   elements.altitude.textContent = '1.00';
   setStatus('Startpunkt gesetzt. Lauf los.');
   enableWakeLock();
+  paused = false;
+  if (elements.btnPause) { elements.btnPause.textContent = 'Pause'; elements.btnPause.disabled = false; }
   redrawAll();
 }
 
@@ -445,6 +460,13 @@ if (elements.btnGuide) {
     guidingEnabled = !guidingEnabled;
     elements.btnGuide.textContent = guidingEnabled ? 'Zurück zum Start (an)' : 'Zurück zum Start';
     redrawAll();
+  });
+}
+if (elements.btnPause) {
+  elements.btnPause.addEventListener('click', () => {
+    if (!originSet) return;
+    paused = !paused;
+    elements.btnPause.textContent = paused ? 'Start' : 'Pause';
   });
 }
 // no photo/video buttons anymore
@@ -531,6 +553,7 @@ function finalizeCalibration() {
 
 function closeCalibration() {
   elements.calibModal.classList.add('hidden');
+  suppressCanvasTapUntil = Date.now() + 400;
 }
 
 function safeBind(el, type, handler) {
@@ -577,10 +600,12 @@ function toggleFullscreen() {
 }
 
 // Double tap on canvas toggles fullscreen; allow normal scroll otherwise
+let suppressCanvasTapUntil = 0;
 elements.canvas.addEventListener('click', () => {
   // Ignore while any modal is open
   const modalOpen = (elements.calibModal && !elements.calibModal.classList.contains('hidden')) || (elements.resetModal && !elements.resetModal.classList.contains('hidden'));
   if (modalOpen) return;
+  if (Date.now() < suppressCanvasTapUntil) return;
   toggleFullscreen();
 });
 

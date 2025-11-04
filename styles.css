@@ -63,6 +63,7 @@ input[type="number"] {
   padding: 8px 10px;
   accent-color: #666;
 }
+input#calibSeconds { background: #121212; border-color: #333; }
 
 select {
   background: #0f172a;
