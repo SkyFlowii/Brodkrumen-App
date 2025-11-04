@@ -21,6 +21,7 @@ const elements = {
   calibModal: document.getElementById('calibModal'),
   calibSteps: document.getElementById('calibSteps'),
   calibSeconds: document.getElementById('calibSeconds'),
+  calibCountdown: document.getElementById('calibCountdown'),
   calibStart: document.getElementById('calibStart'),
   calibStop: document.getElementById('calibStop'),
   calibApply: document.getElementById('calibApply'),
@@ -326,7 +327,7 @@ function onMotion(e) {
   if (stepDetected) {
     stepCount += 1;
     const stepMeters = clamp(parseFloat(elements.stepLength.value || '0.75'), 0.3, 1.5);
-    if (originSet) {
+    if (originSet && !guidingEnabled) {
       advanceByStep(stepMeters);
     } else if (calibActive) {
       const liveSteps = Math.max(0, stepCount - stepCountAtCalibStart);
@@ -393,14 +394,15 @@ function advanceByStep(stepMeters) {
 
   currentPosition = next;
 
-  // Vertical estimate only when walking and steep enough; strong clamp to reduce drift
+  // Vertical estimate only when walking and steep enough; strong smoothing
   const pitch = pitchLPF || 0;
   const absPitch = Math.abs(pitch);
   if (!paused && absPitch > 0.26) { // > ~15°
-    const dzRaw = stepMeters * Math.sin(pitch) * 0.6;
-    const dz = clamp(dzRaw, -stepMeters * 0.5, stepMeters * 0.5);
-    altitudeMeters += dz;
-    if (Math.abs(altitudeMeters - 1) < 0.03) altitudeMeters = 1;
+    const dzRaw = stepMeters * Math.sin(pitch) * 0.5;
+    const dzClamped = clamp(dzRaw, -stepMeters * 0.4, stepMeters * 0.4);
+    // Low-pass integrate altitude to avoid jumps
+    altitudeMeters = 0.9 * altitudeMeters + 0.1 * (altitudeMeters + dzClamped);
+    if (Math.abs(altitudeMeters - 1) < 0.02) altitudeMeters = 1;
   }
 
   // recompute return-to-start
@@ -616,6 +618,7 @@ function toggleFullscreen() {
     fullscreen = false;
     document.body.classList.remove('is-fullscreen');
     document.documentElement.style.overflow = '';
+    viewOffsetPx.x = 0; viewOffsetPx.y = 0; // reset camera when leaving fullscreen
   }
   resizeCanvas();
 }
