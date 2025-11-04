@@ -24,8 +24,6 @@
         <button id="btn-reset" disabled>Zurücksetzen</button>
         <button id="btn-calibrate" disabled>Kalibrieren</button>
         <button id="btn-guide" disabled>Zurück zum Start</button>
-        <button id="btn-photo" disabled>Foto</button>
-        <button id="btn-video" disabled>Video</button>
 
         <label class="field">
           Schritt-Länge (m)
@@ -51,8 +49,8 @@
         <h2>Zurücksetzen?</h2>
         <p>Die aktuelle Spur wird gelöscht.</p>
         <div class="modal-actions">
-          <button id="resetCancel">Abbrechen</button>
           <button id="resetConfirm">Ja, zurücksetzen</button>
+          <button id="resetCancel">Abbrechen</button>
         </div>
       </div>
     </section>
@@ -60,28 +58,25 @@
     <section id="calibModal" class="modal hidden">
       <div class="modal-card">
         <h2>Kalibrieren</h2>
-        <p>Geh eine bekannte Strecke (z. B. 10 m) mit normalem Schritt.</p>
+        <p>Geh mit normalem Tempo für die gewählte Zeit.</p>
         <div class="calib-info">Schritte gezählt: <span id="calibSteps">0</span></div>
         <label class="field">
-          Gemessene Strecke (m)
-          <input type="number" id="calibDistance" min="1" max="100" step="0.1" value="10" />
+          Zeit (Sekunden)
+          <input type="number" id="calibSeconds" min="5" max="120" step="1" value="15" />
+        </label>
+        <label class="field">
+          Tempo
+          <select id="calibSpeed">
+            <option value="1.4" selected>Normal</option>
+            <option value="1.1">Langsam</option>
+            <option value="1.8">Schnell</option>
+          </select>
         </label>
         <div class="modal-actions">
           <button id="calibStart">Start</button>
           <button id="calibStop" disabled>Stop</button>
           <button id="calibApply" disabled>Übernehmen</button>
           <button id="calibClose">Schließen</button>
-        </div>
-      </div>
-    </section>
-
-    <section id="cameraModal" class="modal hidden">
-      <div class="modal-card">
-        <h2>Foto</h2>
-        <video id="camVideo" autoplay playsinline style="width:100%; max-height:60vh; background:#000"></video>
-        <div class="modal-actions">
-          <button id="camCapture">Auslösen</button>
-          <button id="camClose">Schließen</button>
         </div>
       </div>
     </section>

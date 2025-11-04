@@ -8,8 +8,6 @@ const elements = {
   btnReset: document.getElementById('btn-reset'),
   btnCalibrate: document.getElementById('btn-calibrate'),
   btnGuide: document.getElementById('btn-guide'),
-  btnPhoto: document.getElementById('btn-photo'),
-  btnVideo: document.getElementById('btn-video'),
   stepLength: document.getElementById('stepLength'),
   distance: document.getElementById('distance'),
   heading: document.getElementById('heading'),
@@ -21,7 +19,8 @@ const elements = {
   // calibration modal
   calibModal: document.getElementById('calibModal'),
   calibSteps: document.getElementById('calibSteps'),
-  calibDistance: document.getElementById('calibDistance'),
+  calibSeconds: document.getElementById('calibSeconds'),
+  calibSpeed: document.getElementById('calibSpeed'),
   calibStart: document.getElementById('calibStart'),
   calibStop: document.getElementById('calibStop'),
   calibApply: document.getElementById('calibApply'),
@@ -30,11 +29,6 @@ const elements = {
   resetModal: document.getElementById('resetModal'),
   resetCancel: document.getElementById('resetCancel'),
   resetConfirm: document.getElementById('resetConfirm'),
-  // camera modal
-  cameraModal: document.getElementById('cameraModal'),
-  camVideo: document.getElementById('camVideo'),
-  camCapture: document.getElementById('camCapture'),
-  camClose: document.getElementById('camClose'),
 };
 
 // Canvas setup
@@ -208,6 +202,7 @@ let orientationListenerActive = false;
 let accelBuffer = [];
 const accelBufferSize = 64;
 let lastStepTime = 0;
+let lastAbove = false;
 
 function setStatus(text) {
   elements.status.textContent = text;
@@ -235,8 +230,6 @@ async function requestPermissions() {
     elements.btnReset.disabled = false;
     elements.btnCalibrate.disabled = false;
     if (elements.btnGuide) elements.btnGuide.disabled = false;
-    if (elements.btnPhoto) elements.btnPhoto.disabled = false;
-    if (elements.btnVideo) elements.btnVideo.disabled = false;
     try { localStorage.setItem('sensorsGranted', '1'); } catch (_) {}
     hidePermissionsButton();
     setStatus('Sensoren aktiv. Setze Startpunkt.');
@@ -312,10 +305,12 @@ function detectStepAndAdvance() {
   const variance = recent.reduce((s, v) => s + (v.m - mean) * (v.m - mean), 0) / recent.length;
   const std = Math.sqrt(variance);
   const last = recent[recent.length - 1];
-  const threshold = mean + Math.max(0.5, 0.75 * std);
+  const threshold = mean + Math.max(0.6, 0.9 * std);
 
-  const minMsBetweenSteps = 260;
-  if (last.m > threshold && now - lastStepTime > minMsBetweenSteps) {
+  const minMsBetweenSteps = 300;
+  const risingEdge = !lastAbove && last.m > threshold;
+  lastAbove = last.m > threshold;
+  if (risingEdge && now - lastStepTime > minMsBetweenSteps) {
     lastStepTime = now;
     stepCount += 1;
     const stepMeters = clamp(parseFloat(elements.stepLength.value || '0.75'), 0.3, 1.5);
@@ -340,8 +335,15 @@ function advanceByStep(stepMeters) {
   totalDistance += stepMeters;
 
   // Vertical estimate from pitch per step (dz = step * sin(pitch))
-  const dz = stepMeters * Math.sin(pitchLPF || 0);
-  altitudeMeters += dz;
+  const pitch = pitchLPF || 0;
+  const absPitch = Math.abs(pitch);
+  if (absPitch > 0.17) { // > ~10°
+    const dzRaw = stepMeters * Math.sin(pitch);
+    const dz = clamp(dzRaw, -stepMeters * 0.8, stepMeters * 0.8);
+    altitudeMeters += dz;
+    // Snap near baseline to 1.00
+    if (Math.abs(altitudeMeters - 1) < 0.05) altitudeMeters = 1;
+  }
 
   // recompute return-to-start
   const dx0 = -currentPosition.x;
@@ -372,8 +374,8 @@ function setStartPoint() {
   elements.distance.textContent = '0.00';
   elements.backDist.textContent = '0.00';
   elements.backBearing.textContent = '—';
-  altitudeMeters = 0;
-  elements.altitude.textContent = '0.00';
+  altitudeMeters = 1;
+  elements.altitude.textContent = '1.00';
   setStatus('Startpunkt gesetzt. Lauf los.');
   enableWakeLock();
   redrawAll();
@@ -414,12 +416,7 @@ if (elements.btnGuide) {
     redrawAll();
   });
 }
-if (elements.btnPhoto) {
-  elements.btnPhoto.addEventListener('click', openCamera);
-}
-if (elements.btnVideo) {
-  elements.btnVideo.addEventListener('click', toggleVideo);
-}
+// no photo/video buttons anymore
 
 // PWA service worker
 if ('serviceWorker' in navigator) {
@@ -435,6 +432,8 @@ resizeCanvas();
 let calibActive = false;
 let calibStepCount = 0;
 let stepCountAtCalibStart = 0;
+let calibStartTime = 0;
+let calibTimer = null;
 
 function openCalibration() {
   elements.calibSteps.textContent = '0';
@@ -452,7 +451,11 @@ function startCalibration() {
   elements.calibStart.disabled = true;
   elements.calibStop.disabled = false;
   elements.calibApply.disabled = true;
-  setStatus('Kalibrierung läuft … Gehe die Strecke.');
+  calibStartTime = Date.now();
+  const secs = clamp(parseInt(elements.calibSeconds.value || '15', 10), 5, 120);
+  if (calibTimer) clearTimeout(calibTimer);
+  calibTimer = setTimeout(() => { if (calibActive) stopCalibration(); }, secs * 1000);
+  setStatus('Kalibrierung läuft … Gehe normal.');
 }
 
 function stopCalibration() {
@@ -462,12 +465,15 @@ function stopCalibration() {
   elements.calibStart.disabled = false;
   elements.calibStop.disabled = true;
   elements.calibApply.disabled = calibStepCount > 0 ? false : true;
-  setStatus('Kalibrierung gestoppt. Strecke eingeben und übernehmen.');
+  if (calibTimer) { clearTimeout(calibTimer); calibTimer = null; }
+  setStatus('Kalibrierung gestoppt. Übernehmen für neue Schrittlänge.');
 }
 
 function applyCalibration() {
-  const dist = parseFloat(elements.calibDistance.value || '0');
-  if (!isFinite(dist) || dist <= 0 || calibStepCount <= 0) return;
+  const elapsedSecs = Math.max(1, Math.round((Date.now() - calibStartTime) / 1000));
+  const speed = clamp(parseFloat(elements.calibSpeed.value || '1.4'), 0.6, 3.0); // m/s
+  if (calibStepCount <= 0 || !isFinite(speed)) return;
+  const dist = speed * elapsedSecs;
   const sLen = dist / calibStepCount;
   elements.stepLength.value = sLen.toFixed(2);
   elements.calibModal.classList.add('hidden');
