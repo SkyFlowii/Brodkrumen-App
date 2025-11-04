@@ -20,7 +20,6 @@ const elements = {
   calibModal: document.getElementById('calibModal'),
   calibSteps: document.getElementById('calibSteps'),
   calibSeconds: document.getElementById('calibSeconds'),
-  calibSpeed: document.getElementById('calibSpeed'),
   calibStart: document.getElementById('calibStart'),
   calibStop: document.getElementById('calibStop'),
   calibApply: document.getElementById('calibApply'),
@@ -61,6 +60,18 @@ let headingLPF = null; // low-pass filtered heading
 let pitchLPF = 0; // radians, device pitch (vor/zurück)
 let altitudeMeters = 0; // relative
 let guidingEnabled = false; // show guidance arrow only on demand
+
+// Hoisted globals to avoid ReferenceError before initialization
+let fullscreen = false;
+let originalCanvasParent = null; // set after DOM ready
+let overlayDiv = null;
+
+// Calibration state hoisted
+let calibActive = false;
+let calibStepCount = 0;
+let stepCountAtCalibStart = 0;
+let calibStartTime = 0;
+let calibTimer = null;
 
 // Rendering parameters
 const metersPerPixel = 0.02; // 1 pixel = 2 cm; scale factor for drawing
@@ -475,11 +486,6 @@ elements.canvas.addEventListener('pointerup', (e) => {
 elements.canvas.addEventListener('pointercancel', () => { isDragging = false; });
 
 // ---- Calibration ----
-let calibActive = false;
-let calibStepCount = 0;
-let stepCountAtCalibStart = 0;
-let calibStartTime = 0;
-let calibTimer = null;
 
 function openCalibration() {
   elements.calibSteps.textContent = '0';
@@ -514,13 +520,13 @@ function stopCalibration() {
 
 function finalizeCalibration() {
   const elapsedSecs = Math.max(1, Math.round((Date.now() - calibStartTime) / 1000));
-  const speed = clamp(parseFloat(elements.calibSpeed.value || '1.4'), 0.6, 3.0); // m/s
+  const speed = 1.4; // m/s default average walking speed
   if (calibStepCount <= 0 || !isFinite(speed)) return;
   const dist = speed * elapsedSecs;
   const sLen = dist / calibStepCount;
   elements.stepLength.value = sLen.toFixed(2);
   elements.calibModal.classList.add('hidden');
-  setStatus('Tempo ~ ' + (dist/elapsedSecs).toFixed(2) + ' m/s, Schrittlänge ' + sLen.toFixed(2) + ' m');
+  setStatus('Schrittlänge gesetzt: ' + sLen.toFixed(2) + ' m');
 }
 
 function closeCalibration() {
@@ -548,9 +554,7 @@ elements.resetConfirm.addEventListener('click', () => {
 });
 
 // ---- Fullscreen (overlay) ----
-let fullscreen = false;
-let originalCanvasParent = elements.canvas.parentElement;
-let overlayDiv = null;
+originalCanvasParent = elements.canvas.parentElement;
 function toggleFullscreen() {
   if (!fullscreen) {
     overlayDiv = document.createElement('div');
