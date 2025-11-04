@@ -88,7 +88,11 @@ function metersToCanvas(m) {
 function redrawAll() {
   const rect = elements.canvas.getBoundingClientRect();
   ctx.clearRect(0, 0, rect.width, rect.height);
-  if (!fullscreen) { viewOffsetPx.x = 0; viewOffsetPx.y = 0; }
+  // Auto-follow: when not fullscreen, keep current position centered by offsetting the view
+  if (!fullscreen) {
+    viewOffsetPx.x = -metersToCanvas(currentPosition.x);
+    viewOffsetPx.y = -metersToCanvas(currentPosition.y);
+  }
 
   // Draw grid
   drawGrid(rect.width, rect.height);
@@ -226,6 +230,9 @@ let lastStepTime = 0;
 let lastAbove = false;
 let lastMagnitude = 0;
 let lastMoveHeadingDeg = null;
+let slopeSignStreak = 0;
+let lastSlopeSign = 0;
+let lastWalkTime = 0;
 
 function setStatus(text) {
   elements.status.textContent = text;
@@ -329,6 +336,7 @@ function onMotion(e) {
     const stepMeters = clamp(parseFloat(elements.stepLength.value || '0.75'), 0.3, 1.5);
     if (originSet && !guidingEnabled) {
       advanceByStep(stepMeters);
+      lastWalkTime = Date.now();
     } else if (calibActive) {
       const liveSteps = Math.max(0, stepCount - stepCountAtCalibStart);
       elements.calibSteps.textContent = String(liveSteps);
@@ -398,11 +406,19 @@ function advanceByStep(stepMeters) {
   const pitch = pitchLPF || 0;
   const absPitch = Math.abs(pitch);
   if (!paused && absPitch > 0.26) { // > ~15°
-    const dzRaw = stepMeters * Math.sin(pitch) * 0.5;
-    const dzClamped = clamp(dzRaw, -stepMeters * 0.4, stepMeters * 0.4);
-    // Low-pass integrate altitude to avoid jumps
-    altitudeMeters = 0.9 * altitudeMeters + 0.1 * (altitudeMeters + dzClamped);
+    const sign = Math.sign(Math.sin(pitch));
+    if (sign === lastSlopeSign) slopeSignStreak += 1; else { slopeSignStreak = 1; lastSlopeSign = sign; }
+    if (slopeSignStreak >= 2) { // require two consecutive uphill/downhill steps
+      const dzRaw = stepMeters * Math.sin(pitch) * 0.4;
+      const dzClamped = clamp(dzRaw, -stepMeters * 0.3, stepMeters * 0.3);
+      altitudeMeters = 0.9 * altitudeMeters + 0.1 * (altitudeMeters + dzClamped);
+    }
     if (Math.abs(altitudeMeters - 1) < 0.02) altitudeMeters = 1;
+  }
+  // If kein Schritt seit 4s: sanft Richtung 1.00 ziehen
+  if (Date.now() - lastWalkTime > 4000) {
+    altitudeMeters = 0.98 * altitudeMeters + 0.02 * 1;
+    if (Math.abs(altitudeMeters - 1) < 0.01) altitudeMeters = 1;
   }
 
   // recompute return-to-start
@@ -610,6 +626,7 @@ function toggleFullscreen() {
     fullscreen = true;
     document.body.classList.add('is-fullscreen');
     document.documentElement.style.overflow = 'hidden';
+    try { elements.canvas.style.touchAction = 'none'; } catch(_) {}
   } else {
     if (overlayDiv) {
       originalCanvasParent.appendChild(elements.canvas);
@@ -619,6 +636,7 @@ function toggleFullscreen() {
     document.body.classList.remove('is-fullscreen');
     document.documentElement.style.overflow = '';
     viewOffsetPx.x = 0; viewOffsetPx.y = 0; // reset camera when leaving fullscreen
+    try { elements.canvas.style.touchAction = 'pan-y'; } catch(_) {}
   }
   resizeCanvas();
 }

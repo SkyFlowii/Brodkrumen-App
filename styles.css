@@ -56,14 +56,18 @@ button#btn-reset { border-color: var(--danger); }
 
 .field { display: grid; gap: 4px; font-size: 14px; color: var(--muted); }
 input[type="number"] {
-  background: #0f172a;
+  background: #1a1a1a;
   color: var(--text);
-  border: 1px solid #334155;
+  border: 1px solid #333;
   border-radius: 6px;
   padding: 8px 10px;
   accent-color: #666;
+  -webkit-appearance: none;
+  appearance: none;
+  outline: none;
 }
-input#calibSeconds { background: #121212; border-color: #333; }
+input[type="number"]:focus { border-color: #4b5563; box-shadow: 0 0 0 2px rgba(255,255,255,0.05); }
+input#calibSeconds { background: #1a1a1a; border-color: #333; }
 
 select {
   background: #0f172a;
