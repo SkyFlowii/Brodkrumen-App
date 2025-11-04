@@ -527,9 +527,16 @@ function closeCalibration() {
   elements.calibModal.classList.add('hidden');
 }
 
-elements.calibStart.addEventListener('click', startCalibration);
-elements.calibStop.addEventListener('click', stopCalibration);
-elements.calibClose.addEventListener('click', closeCalibration);
+function safeBind(el, type, handler) {
+  if (!el) return;
+  el.addEventListener(type, (e) => { e.preventDefault(); e.stopPropagation(); handler(e); }, { passive: false });
+}
+safeBind(elements.calibStart, 'click', startCalibration);
+safeBind(elements.calibStart, 'pointerup', startCalibration);
+safeBind(elements.calibStop, 'click', stopCalibration);
+safeBind(elements.calibStop, 'pointerup', stopCalibration);
+safeBind(elements.calibClose, 'click', closeCalibration);
+safeBind(elements.calibClose, 'pointerup', closeCalibration);
 
 // While calibrating, reuse step detection (no changes). We only compute final count on stop.
 
@@ -567,6 +574,9 @@ function toggleFullscreen() {
 
 // Double tap on canvas toggles fullscreen; allow normal scroll otherwise
 elements.canvas.addEventListener('click', () => {
+  // Ignore while any modal is open
+  const modalOpen = (elements.calibModal && !elements.calibModal.classList.contains('hidden')) || (elements.resetModal && !elements.resetModal.classList.contains('hidden'));
+  if (modalOpen) return;
   toggleFullscreen();
 });
 
