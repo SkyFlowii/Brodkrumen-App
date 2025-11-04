@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0f172a" />
+    <title>Brodkrumen</title>
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="icons/icon-192.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <h1>Brodkrumen</h1>
+      <div class="status" id="status">Bereit</div>
+    </header>
+
+    <main class="layout">
+      <section class="controls">
+        <button id="btn-permissions">Sensoren erlauben</button>
+        <button id="btn-start" disabled>Startpunkt setzen</button>
+        <button id="btn-reset" disabled>Zurücksetzen</button>
+        <button id="btn-calibrate" disabled>Kalibrieren</button>
+
+        <label class="field">
+          Schritt-Länge (m)
+          <input type="number" id="stepLength" min="0.4" max="1.2" step="0.01" value="0.75" />
+        </label>
+
+        <div class="info">
+          <div>Distanz: <span id="distance">0.00</span> m</div>
+          <div>Richtung: <span id="heading">—</span>°</div>
+          <div>Schritte: <span id="steps">0</span></div>
+          <div>Zum Start: <span id="backDist">0.00</span> m · <span id="backBearing">—</span>°</div>
+        </div>
+      </section>
+
+      <section class="canvas-wrap">
+        <canvas id="canvas"></canvas>
+      </section>
+    </main>
+
+    <section id="calibModal" class="modal hidden">
+      <div class="modal-card">
+        <h2>Kalibrieren</h2>
+        <p>Geh eine bekannte Strecke (z. B. 10 m) mit normalem Schritt.</p>
+        <div class="calib-info">Schritte gezählt: <span id="calibSteps">0</span></div>
+        <label class="field">
+          Gemessene Strecke (m)
+          <input type="number" id="calibDistance" min="1" max="100" step="0.1" value="10" />
+        </label>
+        <div class="modal-actions">
+          <button id="calibStart">Start</button>
+          <button id="calibStop" disabled>Stop</button>
+          <button id="calibApply" disabled>Übernehmen</button>
+          <button id="calibClose">Schließen</button>
+        </div>
+      </div>
+    </section>
+
+    <footer class="app-footer">
+      <small>Offline-fähig. Kompass + Schritt-Schätzung. Keine Standortdaten nötig.</small>
+    </footer>
+
+    <script src="app.js" type="module"></script>
+  </body>
+  </html>
+
+
