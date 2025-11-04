@@ -272,7 +272,8 @@ function onOrientation(e) {
     headingLPF = headingLPF + alpha * diff;
     lastHeadingDeg = ((headingLPF % 360) + 360) % 360;
     elements.heading.textContent = lastHeadingDeg.toFixed(0);
-    if (originSet) redrawAll();
+    // Always redraw so der Pfeil dreht sich auch ohne Schritte
+    redrawAll();
   }
 
   // Device pitch (front-back tilt). On most devices, e.beta ~ [-180,180]. Use as incline proxy.
@@ -451,12 +452,13 @@ resizeCanvas();
 let isDragging = false;
 let lastDrag = { x: 0, y: 0 };
 elements.canvas.addEventListener('pointerdown', (e) => {
+  if (!fullscreen) return; // nur im Vollbild pannen, sonst normales Scrollen zulassen
   isDragging = true;
   lastDrag = { x: e.clientX, y: e.clientY };
   try { elements.canvas.setPointerCapture(e.pointerId); } catch(_) {}
 });
 elements.canvas.addEventListener('pointermove', (e) => {
-  if (!isDragging) return;
+  if (!fullscreen || !isDragging) return;
   const dx = e.clientX - lastDrag.x;
   const dy = e.clientY - lastDrag.y;
   lastDrag = { x: e.clientX, y: e.clientY };
@@ -466,6 +468,7 @@ elements.canvas.addEventListener('pointermove', (e) => {
   redrawAll();
 }, { passive: false });
 elements.canvas.addEventListener('pointerup', (e) => {
+  if (!fullscreen) return;
   isDragging = false;
   try { elements.canvas.releasePointerCapture(e.pointerId); } catch(_) {}
 });
