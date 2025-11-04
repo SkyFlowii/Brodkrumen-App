@@ -108,7 +108,7 @@ function redrawAll() {
     }
   }
 
-  drawHud();
+  if (!fullscreen) drawHud();
 }
 
 function drawGrid(w, h) {
@@ -203,6 +203,7 @@ let accelBuffer = [];
 const accelBufferSize = 64;
 let lastStepTime = 0;
 let lastAbove = false;
+let lastMagnitude = 0;
 
 function setStatus(text) {
   elements.status.textContent = text;
@@ -294,6 +295,10 @@ function onMotion(e) {
   if (accelBuffer.length > accelBufferSize) accelBuffer.shift();
 
   detectStepAndAdvance();
+  if (calibActive) {
+    const liveSteps = Math.max(0, stepCount - stepCountAtCalibStart);
+    elements.calibSteps.textContent = String(liveSteps);
+  }
 }
 
 function detectStepAndAdvance() {
@@ -305,10 +310,11 @@ function detectStepAndAdvance() {
   const variance = recent.reduce((s, v) => s + (v.m - mean) * (v.m - mean), 0) / recent.length;
   const std = Math.sqrt(variance);
   const last = recent[recent.length - 1];
-  const threshold = mean + Math.max(0.6, 0.9 * std);
+  if (std < 0.6) return; // reject jitter when not walking
+  const threshold = mean + Math.max(0.7, 1.0 * std);
 
-  const minMsBetweenSteps = 300;
-  const risingEdge = !lastAbove && last.m > threshold;
+  const minMsBetweenSteps = 400;
+  const risingEdge = !lastAbove && last.m > threshold && (last.m - lastMagnitude) > 0.6;
   lastAbove = last.m > threshold;
   if (risingEdge && now - lastStepTime > minMsBetweenSteps) {
     lastStepTime = now;
@@ -316,6 +322,7 @@ function detectStepAndAdvance() {
     const stepMeters = clamp(parseFloat(elements.stepLength.value || '0.75'), 0.3, 1.5);
     advanceByStep(stepMeters);
   }
+  lastMagnitude = last.m;
 }
 
 function advanceByStep(stepMeters) {
@@ -439,7 +446,6 @@ function openCalibration() {
   elements.calibSteps.textContent = '0';
   elements.calibStart.disabled = false;
   elements.calibStop.disabled = true;
-  elements.calibApply.disabled = true;
   elements.calibModal.classList.remove('hidden');
 }
 
@@ -450,7 +456,6 @@ function startCalibration() {
   elements.calibSteps.textContent = '0';
   elements.calibStart.disabled = true;
   elements.calibStop.disabled = false;
-  elements.calibApply.disabled = true;
   calibStartTime = Date.now();
   const secs = clamp(parseInt(elements.calibSeconds.value || '15', 10), 5, 120);
   if (calibTimer) clearTimeout(calibTimer);
@@ -464,12 +469,11 @@ function stopCalibration() {
   elements.calibSteps.textContent = String(calibStepCount);
   elements.calibStart.disabled = false;
   elements.calibStop.disabled = true;
-  elements.calibApply.disabled = calibStepCount > 0 ? false : true;
   if (calibTimer) { clearTimeout(calibTimer); calibTimer = null; }
-  setStatus('Kalibrierung gestoppt. Übernehmen für neue Schrittlänge.');
+  finalizeCalibration();
 }
 
-function applyCalibration() {
+function finalizeCalibration() {
   const elapsedSecs = Math.max(1, Math.round((Date.now() - calibStartTime) / 1000));
   const speed = clamp(parseFloat(elements.calibSpeed.value || '1.4'), 0.6, 3.0); // m/s
   if (calibStepCount <= 0 || !isFinite(speed)) return;
@@ -477,7 +481,7 @@ function applyCalibration() {
   const sLen = dist / calibStepCount;
   elements.stepLength.value = sLen.toFixed(2);
   elements.calibModal.classList.add('hidden');
-  setStatus('Schrittlänge gesetzt: ' + sLen.toFixed(2) + ' m');
+  setStatus('Tempo ~ ' + (dist/elapsedSecs).toFixed(2) + ' m/s, Schrittlänge ' + sLen.toFixed(2) + ' m');
 }
 
 function closeCalibration() {
@@ -486,7 +490,6 @@ function closeCalibration() {
 
 elements.calibStart.addEventListener('click', startCalibration);
 elements.calibStop.addEventListener('click', stopCalibration);
-elements.calibApply.addEventListener('click', applyCalibration);
 elements.calibClose.addEventListener('click', closeCalibration);
 
 // While calibrating, reuse step detection (no changes). We only compute final count on stop.

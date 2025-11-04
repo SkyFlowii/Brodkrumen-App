@@ -61,6 +61,15 @@ input[type="number"] {
   border: 1px solid #334155;
   border-radius: 6px;
   padding: 8px 10px;
+  accent-color: #666;
+}
+
+select {
+  background: #0f172a;
+  color: var(--text);
+  border: 1px solid #334155;
+  border-radius: 6px;
+  padding: 8px 10px;
 }
 
 .info { font-size: 14px; color: var(--muted); display: grid; gap: 2px; }
