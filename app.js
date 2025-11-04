@@ -62,6 +62,7 @@ let pitchLPF = 0; // radians, device pitch (vor/zurück)
 let altitudeMeters = 0; // relative
 let guidingEnabled = false; // show guidance arrow only on demand
 let paused = false;
+let headingWindow = []; // recent headings for step averaging
 
 // Hoisted globals to avoid ReferenceError before initialization
 let fullscreen = false;
@@ -293,6 +294,10 @@ function onOrientation(e) {
     elements.heading.textContent = lastHeadingDeg.toFixed(0);
     // Always redraw so der Pfeil dreht sich auch ohne Schritte
     redrawAll();
+    // push to heading window
+    headingWindow.push({ t: Date.now(), deg: lastHeadingDeg });
+    const cutoff = Date.now() - 600; // 0.6s window
+    while (headingWindow.length && headingWindow[0].t < cutoff) headingWindow.shift();
   }
 
   // Device pitch (front-back tilt). On most devices, e.beta ~ [-180,180]. Use as incline proxy.
@@ -309,6 +314,7 @@ function magnitude(x, y, z) {
 }
 
 function onMotion(e) {
+  if (paused) return; // completely freeze during pause
   const a = e.accelerationIncludingGravity || e.acceleration;
   if (!a) return;
   const m = magnitude(a.x || 0, a.y || 0, a.z || 0);
@@ -359,7 +365,16 @@ function detectStep() {
 
 function advanceByStep(stepMeters) {
   // Heading: 0° = North (up). Canvas Y grows down, so dy = +meters for South. We invert.
-  const heading = (lastHeadingDeg == null) ? 0 : lastHeadingDeg;
+  // Use averaged heading over last ~0.6s to avoid compass jumps
+  let heading = lastHeadingDeg == null ? 0 : lastHeadingDeg;
+  if (headingWindow.length) {
+    const s = headingWindow.reduce((acc, h) => {
+      const r = h.deg * Math.PI / 180;
+      acc.x += Math.cos(r); acc.y += Math.sin(r); return acc;
+    }, { x: 0, y: 0 });
+    const avg = Math.atan2(s.y, s.x) * 180 / Math.PI;
+    heading = ((avg % 360) + 360) % 360;
+  }
   const rad = heading * Math.PI / 180;
   // Convert to canvas/world coordinates (x to right, y down). North means y decreases.
   const dx = Math.sin(rad) * stepMeters; // east-west component
@@ -378,15 +393,14 @@ function advanceByStep(stepMeters) {
 
   currentPosition = next;
 
-  // Vertical estimate from pitch per step (dz = step * sin(pitch))
+  // Vertical estimate only when walking and steep enough; strong clamp to reduce drift
   const pitch = pitchLPF || 0;
   const absPitch = Math.abs(pitch);
-  if (absPitch > 0.17) { // > ~10°
-    const dzRaw = stepMeters * Math.sin(pitch);
-    const dz = clamp(dzRaw, -stepMeters * 0.8, stepMeters * 0.8);
+  if (!paused && absPitch > 0.26) { // > ~15°
+    const dzRaw = stepMeters * Math.sin(pitch) * 0.6;
+    const dz = clamp(dzRaw, -stepMeters * 0.5, stepMeters * 0.5);
     altitudeMeters += dz;
-    // Snap near baseline to 1.00
-    if (Math.abs(altitudeMeters - 1) < 0.05) altitudeMeters = 1;
+    if (Math.abs(altitudeMeters - 1) < 0.03) altitudeMeters = 1;
   }
 
   // recompute return-to-start
@@ -525,8 +539,15 @@ function startCalibration() {
   elements.calibStop.disabled = false;
   calibStartTime = Date.now();
   const secs = clamp(parseInt(elements.calibSeconds.value || '15', 10), 5, 120);
-  if (calibTimer) clearTimeout(calibTimer);
-  calibTimer = setTimeout(() => { if (calibActive) stopCalibration(); }, secs * 1000);
+  if (calibTimer) clearInterval(calibTimer);
+  elements.calibCountdown.textContent = String(secs);
+  let remaining = secs;
+  calibTimer = setInterval(() => {
+    if (!calibActive) { clearInterval(calibTimer); calibTimer = null; return; }
+    remaining = Math.max(0, secs - Math.floor((Date.now() - calibStartTime) / 1000));
+    elements.calibCountdown.textContent = String(remaining);
+    if (remaining <= 0) { clearInterval(calibTimer); calibTimer = null; stopCalibration(); }
+  }, 200);
   setStatus('Kalibrierung läuft … Gehe normal.');
 }
 
@@ -536,7 +557,7 @@ function stopCalibration() {
   elements.calibSteps.textContent = String(calibStepCount);
   elements.calibStart.disabled = false;
   elements.calibStop.disabled = true;
-  if (calibTimer) { clearTimeout(calibTimer); calibTimer = null; }
+  if (calibTimer) { clearInterval(calibTimer); calibTimer = null; }
   finalizeCalibration();
 }
 
